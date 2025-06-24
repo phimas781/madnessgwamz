@@ -17,7 +17,7 @@ st.set_page_config(
 # Load model (make sure 'gwamz_predictor.pkl' is in the same folder)
 @st.cache_resource
 def load_model():
-    return joblib.load('gwamz_predictor.pkl')
+    return joblib.load('models/gwamz_predictor.pkl')
 
 model = load_model()
 
