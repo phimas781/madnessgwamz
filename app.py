@@ -18,28 +18,49 @@ st.set_page_config(
 import os
 import streamlit as st
 import joblib
+from pathlib import Path
+import urllib.request
 
 @st.cache_resource
 def load_model():
-    # Try multiple possible paths
+    # Try all possible locations
+    base_path = Path(__file__).parent
     possible_paths = [
-        'models/gwamz_predictor.pkl',  # Relative path
-        os.path.join(os.path.dirname(__file__), 'models/gwamz_predictor.pkl'),  # Absolute path
-        'gwamz_predictor.pkl'  # Root directory fallback
+        base_path / 'models' / 'gwamz_predictor.pkl',
+        base_path / 'gwamz_predictor.pkl',
+        Path.cwd() / 'models' / 'gwamz_predictor.pkl',
+        Path.cwd() / 'gwamz_predictor.pkl'
     ]
+    
+    # Try direct download if all else fails
+    github_raw_url = "https://github.com/your-username/your-repo/raw/main/models/gwamz_predictor.pkl"
+    download_path = base_path / 'gwamz_predictor.pkl'
+    possible_paths.append(download_path)
     
     for path in possible_paths:
         try:
-            st.write(f"Trying path: {path}")
+            if not path.exists():
+                if path == download_path:
+                    st.write("Downloading model from GitHub...")
+                    urllib.request.urlretrieve(github_raw_url, download_path)
+                else:
+                    continue
+            
+            st.write(f"Found model at: {path}")
             return joblib.load(path)
-        except FileNotFoundError:
+            
+        except Exception as e:
+            st.write(f"Error with {path}: {str(e)}")
             continue
     
-    # If all paths fail, show error and stop
-    st.error(f"Model file not found in any of these locations: {possible_paths}")
+    st.error("""
+    Model file could not be found or loaded. Please:
+    1. Verify the file exists in GitHub at: /models/gwamz_predictor.pkl
+    2. Check the file size is >0 bytes
+    3. Ensure you've committed and pushed all changes
+    """)
     st.stop()
 
-model = load_model()
 
 # Add this to your app.py as a temporary fix
 import urllib.request
