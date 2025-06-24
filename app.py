@@ -10,66 +10,44 @@ import urllib.request
 import os
 
 # =============================================
-# MODEL LOADING WITH MULTIPLE FALLBACK MECHANISMS
+# MODEL LOADING (FIXED VERSION)
 # =============================================
 
-@st.cache_resource
-def load_model():
-    """Robust model loader with multiple fallback options"""
-    # Replace with your actual GitHub raw content URL
+def load_model_file():
+    """Load model file with multiple fallbacks"""
+    # Replace with your actual GitHub URL
     GITHUB_RAW_URL = "https://github.com/phimas781/madnessgwamz/blob/main/app.py"
     
-    # All possible local paths to check
+    # Possible local paths
     LOCAL_PATHS = [
-        Path("models/gwamz_predictor.pkl"),           # Standard models folder
-        Path("gwamz_predictor.pkl"),                 # Root directory
-        Path(__file__).parent / "gwamz_predictor.pkl", # Absolute path
+        Path("models/gwamz_predictor.pkl"),
+        Path("gwamz_predictor.pkl"),
+        Path(__file__).parent / "gwamz_predictor.pkl",
     ]
     
-    # 1. First try local paths
+    # Try local paths first
     for path in LOCAL_PATHS:
-        try:
-            if path.exists():
-                st.success(f"Loading model from: {path}")
+        if path.exists():
+            try:
                 return joblib.load(path)
-        except Exception as e:
-            st.warning(f"Failed to load from {path}: {str(e)}")
-            continue
+            except Exception:
+                continue
     
-    # 2. Try downloading from GitHub if local files not found
+    # Try downloading from GitHub
     try:
         download_path = Path("gwamz_predictor.pkl")
-        st.warning("Downloading model from GitHub...")
-        
-        # Create models directory if it doesn't exist
-        os.makedirs("models", exist_ok=True)
-        
-        # Download the file
         urllib.request.urlretrieve(GITHUB_RAW_URL, download_path)
-        
         if download_path.exists():
-            st.success("Model downloaded successfully!")
             return joblib.load(download_path)
-    except Exception as e:
-        st.error(f"Download failed: {str(e)}")
+    except Exception:
+        pass
     
-    # 3. Final fallback - manual upload
-    st.error("""
-    ### Automatic model loading failed. Please:
-    1. Download the model file from [GitHub](%s)
-    2. Upload it below:
-    """ % GITHUB_RAW_URL)
-    
-    uploaded_file = st.file_uploader("Upload gwamz_predictor.pkl", type="pkl")
-    if uploaded_file is not None:
-        with open("gwamz_predictor.pkl", "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        return joblib.load("gwamz_predictor.pkl")
-    
-    st.stop()
+    return None
 
-# Load the model
-model = load_model()
+# Cache the model loading
+@st.cache_resource
+def get_model():
+    return load_model_file()
 
 # =============================================
 # STREAMLIT APP UI
@@ -82,6 +60,26 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Initialize model
+model = get_model()
+
+# Manual upload fallback
+if model is None:
+    st.error("""
+    ### Automatic model loading failed. Please:
+    1. Download the model file from GitHub
+    2. Upload it below:
+    """)
+    
+    uploaded_file = st.file_uploader("Upload gwamz_predictor.pkl", type="pkl")
+    if uploaded_file is not None:
+        with open("gwamz_predictor.pkl", "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        model = joblib.load("gwamz_predictor.pkl")
+        st.rerun()
+    else:
+        st.stop()
 
 # App title
 st.title("🎤 Gwamz Song Performance Predictor")
@@ -124,7 +122,7 @@ def user_input_features():
     release_year = release_date.year
     release_month = release_date.month
     release_day = release_date.day
-    release_weekday = release_date.weekday()  # Monday=0, Sunday=6
+    release_weekday = release_date.weekday()
     
     # Days since first Gwamz release (April 29, 2021)
     first_release = datetime(2021, 4, 29).date()
@@ -183,7 +181,7 @@ if st.button("Predict Streams"):
         st.success(f"### Predicted Streams: **{predicted_streams:,}**")
         
         # Performance analysis
-        avg_streams = 500_000  # Gwamz's historical average
+        avg_streams = 500_000
         performance_ratio = (predicted_streams / avg_streams) * 100
         
         col1, col2 = st.columns(2)
