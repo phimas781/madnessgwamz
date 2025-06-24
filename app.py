@@ -5,71 +5,83 @@ import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
+from pathlib import Path
+import urllib.request
+import os
 
-# Set page config
+# =============================================
+# MODEL LOADING WITH MULTIPLE FALLBACK MECHANISMS
+# =============================================
+
+@st.cache_resource
+def load_model():
+    """Robust model loader with multiple fallback options"""
+    # Replace with your actual GitHub raw content URL
+    GITHUB_RAW_URL = "https://github.com/phimas781/madnessgwamz/blob/main/app.py"
+    
+    # All possible local paths to check
+    LOCAL_PATHS = [
+        Path("models/gwamz_predictor.pkl"),           # Standard models folder
+        Path("gwamz_predictor.pkl"),                 # Root directory
+        Path(__file__).parent / "gwamz_predictor.pkl", # Absolute path
+    ]
+    
+    # 1. First try local paths
+    for path in LOCAL_PATHS:
+        try:
+            if path.exists():
+                st.success(f"Loading model from: {path}")
+                return joblib.load(path)
+        except Exception as e:
+            st.warning(f"Failed to load from {path}: {str(e)}")
+            continue
+    
+    # 2. Try downloading from GitHub if local files not found
+    try:
+        download_path = Path("gwamz_predictor.pkl")
+        st.warning("Downloading model from GitHub...")
+        
+        # Create models directory if it doesn't exist
+        os.makedirs("models", exist_ok=True)
+        
+        # Download the file
+        urllib.request.urlretrieve(GITHUB_RAW_URL, download_path)
+        
+        if download_path.exists():
+            st.success("Model downloaded successfully!")
+            return joblib.load(download_path)
+    except Exception as e:
+        st.error(f"Download failed: {str(e)}")
+    
+    # 3. Final fallback - manual upload
+    st.error("""
+    ### Automatic model loading failed. Please:
+    1. Download the model file from [GitHub](%s)
+    2. Upload it below:
+    """ % GITHUB_RAW_URL)
+    
+    uploaded_file = st.file_uploader("Upload gwamz_predictor.pkl", type="pkl")
+    if uploaded_file is not None:
+        with open("gwamz_predictor.pkl", "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        return joblib.load("gwamz_predictor.pkl")
+    
+    st.stop()
+
+# Load the model
+model = load_model()
+
+# =============================================
+# STREAMLIT APP UI
+# =============================================
+
+# Page configuration
 st.set_page_config(
     page_title="Gwamz Track Predictor",
     page_icon="🎵",
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-# Load model (make sure 'gwamz_predictor.pkl' is in the same folder)
-import os
-import streamlit as st
-import joblib
-from pathlib import Path
-import urllib.request
-
-@st.cache_resource
-def load_model():
-    # Try all possible locations
-    base_path = Path(__file__).parent
-    possible_paths = [
-        base_path / 'models' / 'gwamz_predictor.pkl',
-        base_path / 'gwamz_predictor.pkl',
-        Path.cwd() / 'models' / 'gwamz_predictor.pkl',
-        Path.cwd() / 'gwamz_predictor.pkl'
-    ]
-    
-    # Try direct download if all else fails
-    github_raw_url = "https://github.com/your-username/your-repo/raw/main/models/gwamz_predictor.pkl"
-    download_path = base_path / 'gwamz_predictor.pkl'
-    possible_paths.append(download_path)
-    
-    for path in possible_paths:
-        try:
-            if not path.exists():
-                if path == download_path:
-                    st.write("Downloading model from GitHub...")
-                    urllib.request.urlretrieve(github_raw_url, download_path)
-                else:
-                    continue
-            
-            st.write(f"Found model at: {path}")
-            return joblib.load(path)
-            
-        except Exception as e:
-            st.write(f"Error with {path}: {str(e)}")
-            continue
-    
-    st.error("""
-    Model file could not be found or loaded. Please:
-    1. Verify the file exists in GitHub at: /models/gwamz_predictor.pkl
-    2. Check the file size is >0 bytes
-    3. Ensure you've committed and pushed all changes
-    """)
-    st.stop()
-
-
-# Add this to your app.py as a temporary fix
-import urllib.request
-
-if not Path('models/gwamz_predictor.pkl').exists():
-    urllib.request.urlretrieve(
-        'https://github.com/your-username/your-repo/raw/main/models/gwamz_predictor.pkl',
-        'gwamz_predictor.pkl'
-    )
 
 # App title
 st.title("🎤 Gwamz Song Performance Predictor")
@@ -78,10 +90,14 @@ Predict how many streams a new Gwamz track will get based on historical data.
 Adjust the settings in the sidebar and click **Predict**.
 """)
 
-# --- Sidebar for User Input ---
+# =============================================
+# USER INPUT SECTION
+# =============================================
+
 st.sidebar.header("Track Configuration")
 
 def user_input_features():
+    """Collect user inputs from sidebar"""
     # Release Date
     release_date = st.sidebar.date_input("Release Date", datetime.now())
     
@@ -152,52 +168,62 @@ def user_input_features():
 # Get user input
 input_df = user_input_features()
 
-# --- Main Panel ---
+# =============================================
+# PREDICTION SECTION
+# =============================================
+
 st.subheader("Selected Parameters")
 st.write(input_df)
 
-# Prediction
 if st.button("Predict Streams"):
-    prediction = model.predict(input_df)
-    predicted_streams = int(prediction[0])
+    try:
+        prediction = model.predict(input_df)
+        predicted_streams = int(prediction[0])
+        
+        st.success(f"### Predicted Streams: **{predicted_streams:,}**")
+        
+        # Performance analysis
+        avg_streams = 500_000  # Gwamz's historical average
+        performance_ratio = (predicted_streams / avg_streams) * 100
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Predicted Streams", f"{predicted_streams:,}")
+        with col2:
+            st.metric("Vs. Average", f"{performance_ratio:.1f}%", 
+                     delta=f"{performance_ratio-100:.1f}%")
+        
+        # Interpretation
+        if predicted_streams > avg_streams * 1.5:
+            st.success("🔥 **Hit Potential!** This track is predicted to perform **significantly better** than average.")
+        elif predicted_streams > avg_streams:
+            st.success("👍 **Above Average** - Strong performance expected.")
+        else:
+            st.warning("⚠️ **Below Average** - Consider optimizing release strategy.")
+        
+        # Top influencing factors
+        st.subheader("Key Factors Affecting Prediction")
+        feature_importance = model.feature_importances_
+        top_3 = sorted(zip(input_df.columns, feature_importance), 
+                      key=lambda x: x[1], reverse=True)[:3]
+        
+        for feature, importance in top_3:
+            value = input_df[feature].values[0]
+            st.write(f"- **{feature.replace('_', ' ').title()}**: {value} (Impact: {importance*100:.1f}%)")
     
-    st.success(f"### Predicted Streams: **{predicted_streams:,}**")
-    
-    # Performance analysis
-    avg_streams = 500_000  # Gwamz's historical average
-    performance_ratio = (predicted_streams / avg_streams) * 100
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Predicted Streams", f"{predicted_streams:,}")
-    with col2:
-        st.metric("Vs. Average", f"{performance_ratio:.1f}%", 
-                 delta=f"{performance_ratio-100:.1f}%")
-    
-    # Interpretation
-    if predicted_streams > avg_streams * 1.5:
-        st.success("🔥 **Hit Potential!** This track is predicted to perform **significantly better** than average.")
-    elif predicted_streams > avg_streams:
-        st.success("👍 **Above Average** - Strong performance expected.")
-    else:
-        st.warning("⚠️ **Below Average** - Consider optimizing release strategy.")
-    
-    # Top influencing factors
-    st.subheader("Key Factors Affecting Prediction")
-    feature_importance = model.feature_importances_
-    top_3 = sorted(zip(input_df.columns, feature_importance), 
-                  key=lambda x: x[1], reverse=True)[:3]
-    
-    for feature, importance in top_3:
-        value = input_df[feature].values[0]
-        st.write(f"- **{feature.replace('_', ' ').title()}**: {value} (Impact: {importance*100:.1f}%)")
+    except Exception as e:
+        st.error(f"Prediction failed: {str(e)}")
 
-# --- Historical Data Visualization ---
+# =============================================
+# HISTORICAL DATA VISUALIZATION
+# =============================================
+
 st.markdown("---")
 st.subheader("Gwamz's Historical Performance")
 
 @st.cache_data
 def load_historical_data():
+    """Load and preprocess historical data"""
     df = pd.read_csv('gwamz_data.csv')
     df['release_date'] = pd.to_datetime(df['release_date'], format='%d/%m/%Y')
     df['version'] = 'Original'
@@ -207,31 +233,35 @@ def load_historical_data():
     df.loc[df['track_name'].str.contains('Jersey'), 'version'] = 'Jersey Club'
     return df
 
-hist_data = load_historical_data()
+try:
+    hist_data = load_historical_data()
 
-# Streams over time
-fig1, ax1 = plt.subplots(figsize=(10, 4))
-sns.lineplot(
-    data=hist_data, 
-    x='release_date', 
-    y='streams', 
-    hue='version',
-    marker='o',
-    ax=ax1
-)
-ax1.set_title("Streams Over Time by Version")
-ax1.set_xlabel("Release Date")
-ax1.set_ylabel("Streams")
-st.pyplot(fig1)
+    # Streams over time
+    fig1, ax1 = plt.subplots(figsize=(10, 4))
+    sns.lineplot(
+        data=hist_data, 
+        x='release_date', 
+        y='streams', 
+        hue='version',
+        marker='o',
+        ax=ax1
+    )
+    ax1.set_title("Streams Over Time by Version")
+    ax1.set_xlabel("Release Date")
+    ax1.set_ylabel("Streams")
+    st.pyplot(fig1)
 
-# Version comparison
-fig2, ax2 = plt.subplots(figsize=(10, 4))
-sns.boxplot(
-    data=hist_data,
-    x='version',
-    y='streams',
-    order=["Original", "Sped Up", "Remix", "Jersey Club", "Instrumental"],
-    ax=ax2
-)
-ax2.set_title("Streams Distribution by Track Version")
-st.pyplot(fig2)
+    # Version comparison
+    fig2, ax2 = plt.subplots(figsize=(10, 4))
+    sns.boxplot(
+        data=hist_data,
+        x='version',
+        y='streams',
+        order=["Original", "Sped Up", "Remix", "Jersey Club", "Instrumental"],
+        ax=ax2
+    )
+    ax2.set_title("Streams Distribution by Track Version")
+    st.pyplot(fig2)
+
+except Exception as e:
+    st.warning(f"Could not load historical data: {str(e)}")
