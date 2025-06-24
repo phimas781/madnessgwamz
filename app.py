@@ -41,6 +41,15 @@ def load_model():
 
 model = load_model()
 
+# Add this to your app.py as a temporary fix
+import urllib.request
+
+if not Path('models/gwamz_predictor.pkl').exists():
+    urllib.request.urlretrieve(
+        'https://github.com/your-username/your-repo/raw/main/models/gwamz_predictor.pkl',
+        'gwamz_predictor.pkl'
+    )
+
 # App title
 st.title("🎤 Gwamz Song Performance Predictor")
 st.markdown("""
