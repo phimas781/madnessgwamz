@@ -15,10 +15,29 @@ st.set_page_config(
 )
 
 # Load model (make sure 'gwamz_predictor.pkl' is in the same folder)
+import os
+import streamlit as st
+import joblib
+
 @st.cache_resource
 def load_model():
-    # Use absolute path for Streamlit Cloud
-    return joblib.load('models/gwamz_predictor.pkl')
+    # Try multiple possible paths
+    possible_paths = [
+        'models/gwamz_predictor.pkl',  # Relative path
+        os.path.join(os.path.dirname(__file__), 'models/gwamz_predictor.pkl'),  # Absolute path
+        'gwamz_predictor.pkl'  # Root directory fallback
+    ]
+    
+    for path in possible_paths:
+        try:
+            st.write(f"Trying path: {path}")
+            return joblib.load(path)
+        except FileNotFoundError:
+            continue
+    
+    # If all paths fail, show error and stop
+    st.error(f"Model file not found in any of these locations: {possible_paths}")
+    st.stop()
 
 model = load_model()
 
