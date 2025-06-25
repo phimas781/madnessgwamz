@@ -8,46 +8,80 @@ from datetime import datetime
 from pathlib import Path
 import urllib.request
 import os
+import base64
 
 # =============================================
-# MODEL LOADING (FIXED VERSION)
+# MODEL LOADING (FULLY ROBUST VERSION)
 # =============================================
 
-def load_model_file():
-    """Load model file with multiple fallbacks"""
-    # Replace with your actual GitHub URL
+def load_model():
+    """Robust model loader with multiple fallback mechanisms"""
+    # Configuration - REPLACE WITH YOUR ACTUAL GITHUB URL
     GITHUB_RAW_URL = "https://github.com/phimas781/madnessgwamz/blob/main/app.py"
+    MODEL_NAME = "gwamz_predictor.pkl"
+    MODEL_DIR = "models"
     
-    # Possible local paths
-    LOCAL_PATHS = [
-        Path("models/gwamz_predictor.pkl"),
-        Path("gwamz_predictor.pkl"),
-        Path(__file__).parent / "gwamz_predictor.pkl",
+    # Create models directory if it doesn't exist
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    
+    # Possible model paths to check
+    possible_paths = [
+        Path(MODEL_DIR) / MODEL_NAME,  # models/gwamz_predictor.pkl
+        Path(MODEL_NAME),              # gwamz_predictor.pkl
+        Path(__file__).parent / MODEL_DIR / MODEL_NAME,  # Absolute path
     ]
     
-    # Try local paths first
-    for path in LOCAL_PATHS:
+    # 1. Try local paths first
+    for path in possible_paths:
         if path.exists():
             try:
                 return joblib.load(path)
-            except Exception:
+            except Exception as e:
+                st.warning(f"Found but couldn't load {path}: {str(e)}")
                 continue
     
-    # Try downloading from GitHub
+    # 2. Try downloading from GitHub
     try:
-        download_path = Path("gwamz_predictor.pkl")
-        urllib.request.urlretrieve(GITHUB_RAW_URL, download_path)
+        download_path = Path(MODEL_DIR) / MODEL_NAME
+        st.warning("Attempting to download model from GitHub...")
+        
+        # Use urlretrieve with timeout
+        urllib.request.urlretrieve(
+            GITHUB_RAW_URL,
+            download_path,
+            reporthook=lambda count, block_size, total_size: st.progress(count * block_size / total_size)
+            
         if download_path.exists():
+            st.success("Download successful!")
             return joblib.load(download_path)
-    except Exception:
-        pass
+    except Exception as e:
+        st.error(f"Download failed: {str(e)}")
     
-    return None
+    # 3. Ultimate fallback - manual upload
+    st.error("""
+    ### Automatic loading failed. Please:
+    1. Download the model from: [GitHub](%s)
+    2. Upload it below:
+    """ % GITHUB_RAW_URL)
+    
+    uploaded_file = st.file_uploader(f"Upload {MODEL_NAME}", type="pkl")
+    if uploaded_file is not None:
+        try:
+            with open(Path(MODEL_DIR) / MODEL_NAME, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            st.success("Upload successful! Reloading...")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Upload failed: {str(e)}")
+    
+    st.stop()
 
-# Cache the model loading
-@st.cache_resource
-def get_model():
-    return load_model_file()
+# Initialize model
+try:
+    model = load_model()
+except Exception as e:
+    st.error(f"Critical error loading model: {str(e)}")
+    st.stop()
 
 # =============================================
 # STREAMLIT APP UI
@@ -60,26 +94,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-# Initialize model
-model = get_model()
-
-# Manual upload fallback
-if model is None:
-    st.error("""
-    ### Automatic model loading failed. Please:
-    1. Download the model file from GitHub
-    2. Upload it below:
-    """)
-    
-    uploaded_file = st.file_uploader("Upload gwamz_predictor.pkl", type="pkl")
-    if uploaded_file is not None:
-        with open("gwamz_predictor.pkl", "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        model = joblib.load("gwamz_predictor.pkl")
-        st.rerun()
-    else:
-        st.stop()
 
 # App title
 st.title("🎤 Gwamz Song Performance Predictor")
@@ -111,7 +125,7 @@ def user_input_features():
     
     # Track Version
     version = st.sidebar.radio("Track Version", 
-                              ["Original", "Sped Up", "Remix", "Instrumental", "Jersey Club"])
+                             ["Original", "Sped Up", "Remix", "Instrumental", "Jersey Club"])
     
     # Popularity Metrics
     followers = st.sidebar.number_input("Artist Followers", min_value=0, value=7937)
@@ -122,7 +136,7 @@ def user_input_features():
     release_year = release_date.year
     release_month = release_date.month
     release_day = release_date.day
-    release_weekday = release_date.weekday()
+    release_weekday = release_date.weekday()  # Monday=0, Sunday=6
     
     # Days since first Gwamz release (April 29, 2021)
     first_release = datetime(2021, 4, 29).date()
@@ -181,7 +195,7 @@ if st.button("Predict Streams"):
         st.success(f"### Predicted Streams: **{predicted_streams:,}**")
         
         # Performance analysis
-        avg_streams = 500_000
+        avg_streams = 500_000  # Gwamz's historical average
         performance_ratio = (predicted_streams / avg_streams) * 100
         
         col1, col2 = st.columns(2)
@@ -222,18 +236,22 @@ st.subheader("Gwamz's Historical Performance")
 @st.cache_data
 def load_historical_data():
     """Load and preprocess historical data"""
-    df = pd.read_csv('gwamz_data.csv')
-    df['release_date'] = pd.to_datetime(df['release_date'], format='%d/%m/%Y')
-    df['version'] = 'Original'
-    df.loc[df['track_name'].str.contains('Sped Up'), 'version'] = 'Sped Up'
-    df.loc[df['track_name'].str.contains('Remix'), 'version'] = 'Remix'
-    df.loc[df['track_name'].str.contains('Instrumental'), 'version'] = 'Instrumental'
-    df.loc[df['track_name'].str.contains('Jersey'), 'version'] = 'Jersey Club'
-    return df
+    try:
+        df = pd.read_csv('gwamz_data.csv')
+        df['release_date'] = pd.to_datetime(df['release_date'], format='%d/%m/%Y')
+        df['version'] = 'Original'
+        df.loc[df['track_name'].str.contains('Sped Up'), 'version'] = 'Sped Up'
+        df.loc[df['track_name'].str.contains('Remix'), 'version'] = 'Remix'
+        df.loc[df['track_name'].str.contains('Instrumental'), 'version'] = 'Instrumental'
+        df.loc[df['track_name'].str.contains('Jersey'), 'version'] = 'Jersey Club'
+        return df
+    except Exception as e:
+        st.error(f"Couldn't load historical data: {str(e)}")
+        return pd.DataFrame()
 
-try:
-    hist_data = load_historical_data()
+hist_data = load_historical_data()
 
+if not hist_data.empty:
     # Streams over time
     fig1, ax1 = plt.subplots(figsize=(10, 4))
     sns.lineplot(
@@ -260,6 +278,3 @@ try:
     )
     ax2.set_title("Streams Distribution by Track Version")
     st.pyplot(fig2)
-
-except Exception as e:
-    st.warning(f"Could not load historical data: {str(e)}")
