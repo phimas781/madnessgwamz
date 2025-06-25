@@ -8,10 +8,9 @@ from datetime import datetime
 from pathlib import Path
 import urllib.request
 import os
-import base64
 
 # =============================================
-# MODEL LOADING (FULLY ROBUST VERSION)
+# MODEL LOADING (FULLY WORKING VERSION)
 # =============================================
 
 def load_model():
@@ -45,11 +44,16 @@ def load_model():
         download_path = Path(MODEL_DIR) / MODEL_NAME
         st.warning("Attempting to download model from GitHub...")
         
-        # Use urlretrieve with timeout
+        # Download with progress indicator
+        def report_progress(count, block_size, total_size):
+            progress = min(count * block_size / total_size, 1.0)
+            st.progress(progress)
+            
         urllib.request.urlretrieve(
             GITHUB_RAW_URL,
             download_path,
-            reporthook=lambda count, block_size, total_size: st.progress(count * block_size / total_size)
+            reporthook=report_progress
+        )
             
         if download_path.exists():
             st.success("Download successful!")
