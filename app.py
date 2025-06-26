@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
 from pathlib import Path
-import urllib.request
+import requests
 import os
 
 # =============================================
@@ -15,75 +15,79 @@ import os
 
 def load_model():
     """Robust model loader with multiple fallback mechanisms"""
-    # Configuration - REPLACE WITH YOUR ACTUAL GITHUB URL
-    GITHUB_RAW_URL = "https://github.com/phimas781/madnessgwamz/blob/main/gwamz_streams_predictor.pkl"
-    MODEL_NAME = "gwamz_predictor.pkl"
+    # Configuration - MUST USE RAW GITHUB URL
+    GITHUB_RAW_URL = "https://raw.githubusercontent.com/phimas781/madnessgwamz/main/gwamz_streams_predictor.pkl"
+    MODEL_NAME = "gwamz_streams_predictor.pkl"
     MODEL_DIR = "models"
     
-    # Create models directory if it doesn't exist
+    # Debugging info
+    st.write("Current working directory:", os.getcwd())
+    st.write("Directory contents:", os.listdir())
+    
+    # Create models directory if needed
     os.makedirs(MODEL_DIR, exist_ok=True)
+    local_path = Path(MODEL_DIR) / MODEL_NAME
     
-    # Possible model paths to check
-    possible_paths = [
-        Path(MODEL_DIR) / MODEL_NAME,  # models/gwamz_predictor.pkl
-        Path(MODEL_NAME),              # gwamz_predictor.pkl
-        Path(__file__).parent / MODEL_DIR / MODEL_NAME,  # Absolute path
-    ]
+    # 1. First try loading from local
+    if local_path.exists():
+        try:
+            model = joblib.load(local_path)
+            st.success(f"Model loaded successfully from {local_path}")
+            return model
+        except Exception as e:
+            st.error(f"Failed to load local model: {str(e)}")
+            os.remove(local_path)  # Remove corrupted file
     
-    # 1. Try local paths first
-    for path in possible_paths:
-        if path.exists():
-            try:
-                model = joblib.load(path)
-                st.success(f"Successfully loaded model from: {path}")
-                return model
-            except Exception as e:
-                st.warning(f"Found but couldn't load {path}: {str(e)}")
-                continue
-    
-    # 2. Try downloading from GitHub (without progress bar)
+    # 2. Try downloading from GitHub with requests
     try:
-        download_path = Path(MODEL_DIR) / MODEL_NAME
-        st.warning("Attempting to download model from GitHub...")
+        st.warning("Downloading model from GitHub...")
+        response = requests.get(GITHUB_RAW_URL, stream=True)
+        response.raise_for_status()  # Raise exception for bad status codes
         
-        # Simple download without progress reporting
-        urllib.request.urlretrieve(GITHUB_RAW_URL, download_path)
-            
-        if download_path.exists():
+        with open(local_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        
+        if local_path.exists():
             try:
-                model = joblib.load(download_path)
-                st.success("Download successful!")
+                model = joblib.load(local_path)
+                st.success("Model downloaded and loaded successfully!")
                 return model
             except Exception as e:
-                st.error(f"Downloaded file corrupted: {str(e)}")
-                os.remove(download_path)  # Clean up corrupted file
+                st.error(f"Downloaded model is corrupted: {str(e)}")
+                os.remove(local_path)
+    except requests.exceptions.RequestException as e:
+        st.error(f"GitHub download failed: {str(e)}")
     except Exception as e:
         st.error(f"Download failed: {str(e)}")
     
-    # 3. Ultimate fallback - manual upload
-    st.error("""
-    ### Automatic loading failed. Please:
-    1. Download the model from: [GitHub](%s)
-    2. Upload it below:
-    """ % GITHUB_RAW_URL)
+    # 3. Manual upload fallback
+    st.error(f"""
+    ### Could not load model automatically. Please:
+    1. Download the model file directly from: 
+       {GITHUB_RAW_URL}
+    2. Ensure it's named exactly: {MODEL_NAME}
+    3. Upload it below:
+    """)
     
     uploaded_file = st.file_uploader(f"Upload {MODEL_NAME}", type="pkl")
     if uploaded_file is not None:
         try:
-            with open(Path(MODEL_DIR) / MODEL_NAME, "wb") as f:
+            with open(local_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
-            st.success("Upload successful! Reloading...")
-            st.rerun()
+            st.success("Upload successful! Loading model...")
+            return joblib.load(local_path)
         except Exception as e:
             st.error(f"Upload failed: {str(e)}")
+            st.stop()
     
     st.stop()
 
-# Initialize model
+# Load the model
 try:
     model = load_model()
 except Exception as e:
-    st.error(f"Critical error loading model: {str(e)}")
+    st.error(f"Critical error: {str(e)}")
     st.stop()
 
 # =============================================
