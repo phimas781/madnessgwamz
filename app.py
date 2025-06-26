@@ -16,7 +16,7 @@ import os
 def load_model():
     """Robust model loader with multiple fallback mechanisms"""
     # Configuration - REPLACE WITH YOUR ACTUAL GITHUB URL
-    GITHUB_RAW_URL = "https://github.com/phimas781/madnessgwamz/blob/main/app.py"
+    GITHUB_RAW_URL = "https://github.com/your-username/your-repo/raw/main/models/gwamz_predictor.pkl"
     MODEL_NAME = "gwamz_predictor.pkl"
     MODEL_DIR = "models"
     
@@ -34,30 +34,29 @@ def load_model():
     for path in possible_paths:
         if path.exists():
             try:
-                return joblib.load(path)
+                model = joblib.load(path)
+                st.success(f"Successfully loaded model from: {path}")
+                return model
             except Exception as e:
                 st.warning(f"Found but couldn't load {path}: {str(e)}")
                 continue
     
-    # 2. Try downloading from GitHub
+    # 2. Try downloading from GitHub (without progress bar)
     try:
         download_path = Path(MODEL_DIR) / MODEL_NAME
         st.warning("Attempting to download model from GitHub...")
         
-        # Download with progress indicator
-        def report_progress(count, block_size, total_size):
-            progress = min(count * block_size / total_size, 1.0)
-            st.progress(progress)
-            
-        urllib.request.urlretrieve(
-            GITHUB_RAW_URL,
-            download_path,
-            reporthook=report_progress
-        )
+        # Simple download without progress reporting
+        urllib.request.urlretrieve(GITHUB_RAW_URL, download_path)
             
         if download_path.exists():
-            st.success("Download successful!")
-            return joblib.load(download_path)
+            try:
+                model = joblib.load(download_path)
+                st.success("Download successful!")
+                return model
+            except Exception as e:
+                st.error(f"Downloaded file corrupted: {str(e)}")
+                os.remove(download_path)  # Clean up corrupted file
     except Exception as e:
         st.error(f"Download failed: {str(e)}")
     
