@@ -6,80 +6,56 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
 from pathlib import Path
-import requests
 import os
 
 # =============================================
-# MODEL LOADING (FULLY WORKING VERSION)
+# MODEL LOADING (OPTIMIZED FOR YOUR STRUCTURE)
 # =============================================
 
 def load_model():
-    """Robust model loader with multiple fallback mechanisms"""
-    # Configuration - MUST USE RAW GITHUB URL
-    GITHUB_RAW_URL = "https://raw.githubusercontent.com/phimas781/madnessgwamz/main/gwamz_streams_predictor.pkl"
+    """Robust model loader customized for your directory structure"""
     MODEL_NAME = "gwamz_streams_predictor.pkl"
-    MODEL_DIR = "models"
     
-    # Debugging info
-    st.write("Current working directory:", os.getcwd())
-    st.write("Directory contents:", os.listdir())
+    # Try these paths in order (based on your actual directory structure)
+    possible_paths = [
+        Path(MODEL_NAME),                     # Root directory
+        Path("models") / MODEL_NAME,           # models folder
+        Path(__file__).parent / MODEL_NAME,    # Absolute path to root
+        Path(__file__).parent / "models" / MODEL_NAME  # Absolute path to models
+    ]
     
-    # Create models directory if needed
-    os.makedirs(MODEL_DIR, exist_ok=True)
-    local_path = Path(MODEL_DIR) / MODEL_NAME
-    
-    # 1. First try loading from local
-    if local_path.exists():
-        try:
-            model = joblib.load(local_path)
-            st.success(f"Model loaded successfully from {local_path}")
-            return model
-        except Exception as e:
-            st.error(f"Failed to load local model: {str(e)}")
-            os.remove(local_path)  # Remove corrupted file
-    
-    # 2. Try downloading from GitHub with requests
-    try:
-        st.warning("Downloading model from GitHub...")
-        response = requests.get(GITHUB_RAW_URL, stream=True)
-        response.raise_for_status()  # Raise exception for bad status codes
-        
-        with open(local_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        
-        if local_path.exists():
+    for path in possible_paths:
+        if path.exists():
             try:
-                model = joblib.load(local_path)
-                st.success("Model downloaded and loaded successfully!")
+                model = joblib.load(path)
+                st.success(f"Successfully loaded model from: {path}")
                 return model
             except Exception as e:
-                st.error(f"Downloaded model is corrupted: {str(e)}")
-                os.remove(local_path)
-    except requests.exceptions.RequestException as e:
-        st.error(f"GitHub download failed: {str(e)}")
-    except Exception as e:
-        st.error(f"Download failed: {str(e)}")
+                st.warning(f"Found but couldn't load {path}: {str(e)}")
+                continue
     
-    # 3. Manual upload fallback
+    # Manual upload fallback
     st.error(f"""
     ### Could not load model automatically. Please:
-    1. Download the model file directly from: 
-       {GITHUB_RAW_URL}
-    2. Ensure it's named exactly: {MODEL_NAME}
+    1. The model file should be named: {MODEL_NAME}
+    2. It should be in either:
+       - The root directory
+       - Or in the 'models' folder
     3. Upload it below:
     """)
     
     uploaded_file = st.file_uploader(f"Upload {MODEL_NAME}", type="pkl")
     if uploaded_file is not None:
         try:
-            with open(local_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-            st.success("Upload successful! Loading model...")
-            return joblib.load(local_path)
+            # Save to both locations for future runs
+            os.makedirs("models", exist_ok=True)
+            for save_path in [Path(MODEL_NAME), Path("models") / MODEL_NAME]:
+                with open(save_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+            st.success("Upload successful! Reloading...")
+            st.rerun()
         except Exception as e:
             st.error(f"Upload failed: {str(e)}")
-            st.stop()
     
     st.stop()
 
