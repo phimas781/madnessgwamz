@@ -16,7 +16,7 @@ import os
 def load_model():
     """Robust model loader with multiple fallback mechanisms"""
     # Configuration - REPLACE WITH YOUR ACTUAL GITHUB URL
-    GITHUB_RAW_URL = "https://github.com/your-username/your-repo/raw/main/models/gwamz_predictor.pkl"
+    GITHUB_RAW_URL = "https://github.com/phimas781/madnessgwamz/blob/main/gwamz_streams_predictor.pkl"
     MODEL_NAME = "gwamz_predictor.pkl"
     MODEL_DIR = "models"
     
